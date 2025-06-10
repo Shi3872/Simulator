@@ -47,6 +47,13 @@ class Farmer:
     def decide_irrigation(self):
         if getattr(self, "collapsed", False):
             return
+        
+        # -- water allcoation game --#
+        if getattr(self, "use_equilibrium_strategies", False):
+            self.irrigated_fields = 5
+            return
+        # ---------------------------#
+        
         if not self.yield_history:
             return
         last_yield = self.yield_history[-1]
@@ -76,7 +83,13 @@ class Farmer:
             return 0
         
         self.planned_fields = self.irrigated_fields  # store for stress calc
-        demand = self.irrigated_fields * (WATER_PER_FIELD)
+        
+        # --- irrigation game ---#
+        if getattr(self, "use_equilibrium_strategies", False):
+            demand = self.irrigated_fields * WATER_PER_FIELD * 0.75
+        else:
+            demand = self.irrigated_fields * WATER_PER_FIELD
+
         received = min(available_water, demand)
         self.monthly_water_received.append(received)
         return received
@@ -276,11 +289,13 @@ class WaterResource:
 
 
 class Simulation:
-    def __init__(self, years=10, centralized=False, fishing_enabled=True, print_interval=1):
+    def __init__(self, years=10, centralized=False, fishing_enabled=True, print_interval=1, use_equilibrium_strategies=True):
         self.years = years
         self.farmers = [Farmer(location=i, memory_strength=0, min_income=50) for i in range(9)]
+        self.use_equilibrium_strategies = use_equilibrium_strategies
         for f in self.farmers:
             f.fishing_enabled = fishing_enabled
+            f.use_equilibrium_strategies = use_equilibrium_strategies
         self.print_interval = print_interval
         self.centralized = centralized
         self.authority = NationalAuthority(memory_strength=0) if centralized else None
@@ -381,9 +396,15 @@ class Simulation:
 
             for farmer in sorted(self.farmers, key=lambda f: -f.location):
                 if getattr(farmer, 'fishing_enabled', True):
-                    fish_catch = self.fish.harvest(effort=2)
+                    if getattr(farmer, 'use_equilibrium_strategies', False):
+                        # fishing game NE: 50% effort=1, 50% effort=3
+                        fishing_effort = np.random.choice([2, 4], p=[0.5, 0.5])
+                        fish_catch = self.fish.harvest(effort=fishing_effort)
+                    else:
+                        fish_catch = self.fish.harvest(effort=2)  # default or placeholder
                 else:
                     fish_catch = 0
+
                 y, ci, cc = farmer.update_budget_and_yield(fish_catch=fish_catch, centralized=self.centralized)
                 total_yield += y
                 total_irrigation += ci
